@@ -2,6 +2,7 @@
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <IoAbstraction.h>
+#include <ESP8266WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ESP8266WebServer.h>
 #include "FS.h"
@@ -14,13 +15,18 @@
 #define ROOT_CA_CERT_PATH "/rootca.pem"
 #define CERTIFICATE_PATH "/cert.pem.cert"
 #define PRIVATE_KEY_PATH "/cert.pem.key"
+#define MQTT_SERVER "mqtt.googleapis.com"
+#define MQTT_PORT 8883
+#define MQTT_TOPIC "Thermae"
 
 ESP8266WebServer server(80);
 DHT dht( DHTPIN, DHTTYPE );
+WiFiClientSecure wifiClient;
+PubSubClient pubsubClient(wifiClient);
 
 void handleRootGet() {
-  const int capacity = JSON_OBJECT_SIZE(3);
-  StaticJsonDocument<capacity> doc;
+  const int capacity = JSON_OBJECT_SIZE(4);
+  DynamicJsonDocument doc(capacity);
   doc["message"] = String("Hello from ") + String(MODULE_NAME);
   doc["sensor"] = readDht();
   Serial.println("Accessed / ;");
@@ -31,12 +37,13 @@ void handleRootGet() {
 }
 
 void handleSettingPost() {
-  StaticJsonDocument<200> doc;
+  const int capacity = JSON_OBJECT_SIZE(3) + 4096 * 3;
+  DynamicJsonDocument doc(capacity);
   DeserializationError error = deserializeJson(doc, server.arg("plain"));
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
     Serial.println(error.c_str());
-    server.send(403);
+    server.send(400);
     return;
   }
 
@@ -65,17 +72,21 @@ void handleSettingPost() {
     Serial.println(rootCA);
     File rootcaf = SPIFFS.open(ROOT_CA_CERT_PATH, "w");
     if (rootcaf) {
+      Serial.print("Writing to ");
+      Serial.print(ROOT_CA_CERT_PATH);
       rootcaf.print(rootCA);
       rootcaf.close();
+      Serial.println(" Done.");
     }
   }  
 
-  server.send(200, "application/json", "{ \"status\": \"ok\"}");
+  handleSettingGet();
+  doc.clear();
 }
 
 void handleSettingGet() {
-  const int capacity = JSON_OBJECT_SIZE(3);
-  StaticJsonDocument<capacity> doc;
+  const int capacity = JSON_OBJECT_SIZE(3) + 4096 * 3;
+  DynamicJsonDocument doc(capacity);
   File f = SPIFFS.open(CERTIFICATE_PATH, "r");
   if (f) {
     String cert = f.readString();
@@ -102,9 +113,11 @@ void handleSettingGet() {
     Serial.println(rootCA);
     rootCAF.close();
   }  
-  char output[128];
+  String output;
   serializeJson(doc, output);
   server.send(200, "application/json", output);
+  doc.clear();
+  output.clear();
 }
 
 void prepareRouter() {
@@ -113,16 +126,88 @@ void prepareRouter() {
   server.on("/cert", HTTP_GET, handleSettingGet);
 }
 
+String openFileString(String path) {
+  File f = SPIFFS.open(path, "r");
+  String fileString;
+  if (f) {
+    fileString = f.readString();
+  }
+  f.close();
+  return fileString;
+}
+
+String getCACert() {
+  return openFileString(ROOT_CA_CERT_PATH);
+}
+
+String getCertificate() {
+  return openFileString(CERTIFICATE_PATH);
+}
+
+String getPrivateKey() {
+  return openFileString(PRIVATE_KEY_PATH);
+}
+
+
+void prepareMQTT() {
+  // File caCertFile = SPIFFS.open(ROOT_CA_CERT_PATH, "r");
+  File certificateFile = SPIFFS.open(CERTIFICATE_PATH, "r");
+  File privateKeyFile = SPIFFS.open(PRIVATE_KEY_PATH, "r");
+  // wifiClient.loadCACert(caCertFile, caCertFile.size());
+  wifiClient.loadCertificate(certificateFile, certificateFile.size());
+  wifiClient.loadPrivateKey(privateKeyFile, privateKeyFile.size());
+  pubsubClient.setServer(MQTT_SERVER, MQTT_PORT);
+  pubsubClient.setCallback(mqttCallback);
+  // caCertFile.close();
+  certificateFile.close();
+  privateKeyFile.close();
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+    Serial.print("Received. topic=");
+    Serial.println(topic);
+    for (int i = 0; i < length; i++) {
+        Serial.print((char)payload[i]);
+    }
+    Serial.print("\n");
+}
+
+void connectMQTT(String message) {
+  while (!pubsubClient.connected()) {
+    if (pubsubClient.connect(MODULE_NAME)) {
+        Serial.println("Connected.");
+        pubsubClient.publish(MQTT_TOPIC, message.c_str());
+        Serial.println("Subscribed.");
+    } else {
+        Serial.print("Failed. Error state=");
+        Serial.print(pubsubClient.state());
+        // Wait 5 seconds before retrying
+        delay(5000);
+    }
+  }  
+}
+
 void initializeService() {
-  Serial.println("Prepareing httpd...");
+  Serial.println("Preparing httpd...");
   prepareRouter();
   server.begin();
   Serial.println("Server begins.");
+
+  Serial.println("Preparing mqtt...");
+  prepareMQTT();
+  Serial.println("mqtt done...");
+
   taskManager.scheduleFixedRate(1, []{
     server.handleClient();
   });
   taskManager.scheduleFixedRate(10000, []{
-    Serial.println(readDht());
+    String result = readDht();
+    Serial.println(result);
+    // pubsubClient.publish(MQTT_TOPIC, result.c_str());
+    connectMQTT(result.c_str());
+  });
+  taskManager.scheduleFixedRate(1, []{
+    pubsubClient.loop();
   });
 }
 
