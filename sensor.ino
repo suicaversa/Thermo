@@ -15,13 +15,17 @@
 #define ROOT_CA_CERT_PATH "/rootca.pem"
 #define CERTIFICATE_PATH "/cert.pem.cert"
 #define PRIVATE_KEY_PATH "/cert.pem.key"
-#define MQTT_SERVER "mqtt.googleapis.com"
-#define MQTT_PORT 8883
-#define MQTT_TOPIC "Thermae"
+// #define MQTT_SERVER "mqtt.googleapis.com"
+#define MQTT_SERVER "192.168.11.12"
+// #define MQTT_PORT 8883
+#define MQTT_PORT 1883
+// #define MQTT_TOPIC "Thermae"
+#define MQTT_TOPIC "tp1/test"
 
 ESP8266WebServer server(80);
 DHT dht( DHTPIN, DHTTYPE );
-WiFiClientSecure wifiClient;
+// WiFiClientSecure wifiClient;
+WiFiClient wifiClient;
 PubSubClient pubsubClient(wifiClient);
 
 void handleRootGet() {
@@ -151,16 +155,16 @@ String getPrivateKey() {
 
 void prepareMQTT() {
   // File caCertFile = SPIFFS.open(ROOT_CA_CERT_PATH, "r");
-  File certificateFile = SPIFFS.open(CERTIFICATE_PATH, "r");
-  File privateKeyFile = SPIFFS.open(PRIVATE_KEY_PATH, "r");
+  // File certificateFile = SPIFFS.open(CERTIFICATE_PATH, "r");
+  // File privateKeyFile = SPIFFS.open(PRIVATE_KEY_PATH, "r");
   // wifiClient.loadCACert(caCertFile, caCertFile.size());
-  wifiClient.loadCertificate(certificateFile, certificateFile.size());
-  wifiClient.loadPrivateKey(privateKeyFile, privateKeyFile.size());
+  // wifiClient.loadCertificate(certificateFile, certificateFile.size());
+  // wifiClient.loadPrivateKey(privateKeyFile, privateKeyFile.size());
   pubsubClient.setServer(MQTT_SERVER, MQTT_PORT);
   pubsubClient.setCallback(mqttCallback);
   // caCertFile.close();
-  certificateFile.close();
-  privateKeyFile.close();
+  // certificateFile.close();
+  // privateKeyFile.close();
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -176,15 +180,17 @@ void connectMQTT(String message) {
   while (!pubsubClient.connected()) {
     if (pubsubClient.connect(MODULE_NAME)) {
         Serial.println("Connected.");
-        pubsubClient.publish(MQTT_TOPIC, message.c_str());
-        Serial.println("Subscribed.");
     } else {
         Serial.print("Failed. Error state=");
-        Serial.print(pubsubClient.state());
+        Serial.println(pubsubClient.state());
         // Wait 5 seconds before retrying
         delay(5000);
     }
   }  
+
+  if (pubsubClient.connected()) {
+    pubsubClient.publish(MQTT_TOPIC, message.c_str());
+  }
 }
 
 void initializeService() {
