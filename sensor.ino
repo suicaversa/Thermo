@@ -1,5 +1,4 @@
 #include <ArduinoJson.h>
-#include <DHT.h>
 #include <IoAbstraction.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -8,13 +7,10 @@
 #include "FS.h"
 #define WIFI_RESET_PIN 14
 #define LED_PIN 4
-#define DHTPIN 13
-#define DHTTYPE DHT11
 #define MAX_WIFI_RETRY_SECONDS 10
 #define MODULE_NAME "Thermae"
 
 ESP8266WebServer server(80);
-DHT dht( DHTPIN, DHTTYPE );
 
 void initializeService() {
   Serial.print("Preparing Cloud IoT... ");
@@ -39,130 +35,14 @@ void initializeService() {
   });
 }
 
-boolean isInternetAvailable() {
-  return WiFi.status() == WL_CONNECTED;
-}
-
-boolean tryConnectWifi() {
-  boolean isHighLED = false;
-  int i = 0;
-  while (WiFi.status() != WL_CONNECTED && i < MAX_WIFI_RETRY_SECONDS) {
-    digitalWrite(LED_PIN, isHighLED ? HIGH : LOW);
-    isHighLED = !isHighLED;
-    Serial.print(".");
-    // wait 1 second for re-trying
-    delay(1000);
-    i++;
-  }
-  digitalWrite(LED_PIN, LOW);
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Successfully connected: ");
-    Serial.println(WiFi.localIP().toString());
-    return true;
-  } else {
-    Serial.println("Failed to connect.");
-    return false;
-  }
-}
-
-boolean connectWiFiViaSmartConfig() {
-  boolean isHighLED = false;
-
-  WiFi.mode(WIFI_STA);
-  WiFi.beginSmartConfig();
-  Serial.println("Waiting for SmartConfig.");
-  while (!WiFi.smartConfigDone()) {
-    digitalWrite(LED_PIN, isHighLED ? HIGH : LOW);
-    isHighLED = !isHighLED;
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.println("SmartConfig received.");
-  digitalWrite(LED_PIN, LOW);
-  return tryConnectWifi();
-}
-
-boolean tryPreviousWifi() {
-  Serial.println("Attempting to connect to previous connected ssid.");
-  WiFi.begin();
-  return tryConnectWifi();
-}
-
-boolean waitingWiFiReset() {
-  boolean isResetWifi = false;
-  boolean isHighLED = false;
-  // 最初の30*100ms=3秒間でボタンが押されたらWifiをリセット
-  for(int count=0; count < 30; count++) {
-    digitalWrite(LED_PIN, isHighLED ? HIGH : LOW);
-    isHighLED = !isHighLED;
-    Serial.println(digitalRead(WIFI_RESET_PIN) == LOW);
-    if (digitalRead(WIFI_RESET_PIN) == LOW) isResetWifi = true;
-    delay(100);
-  }
-  digitalWrite(LED_PIN, LOW);
-  return isResetWifi;
-}
-
-boolean setupWifi() {
-  if(waitingWiFiReset()) {
-    connectWiFiViaSmartConfig();
-  } else {
-    tryPreviousWifi();
-  }
-  return WiFi.status() == WL_CONNECTED;
-}
-
 void initializeDevise() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(WIFI_RESET_PIN, INPUT_PULLUP);
   Serial.begin(115200);
   Serial.println("Starting Module...");
-  dht.begin();
+  initializeDHT();
   Serial.println("Starting SPIFS....");
   SPIFFS.begin();
-  delay(100);
-}
-
-String readDht() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-
-  if( isnan(t) || isnan(h) )
-  {
-    return "Failed to read from DHT";
-  }
-  else
-  {
-    return "Humidity: " + String(h) + "%\t" + "Temperature: " + String(t) + " *C";
-  }
-}
-
-void errorBlink() {
-  digitalWrite(LED_PIN, HIGH);
-  delay(1000);
-  digitalWrite(LED_PIN, LOW);
-  delay(100);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
-  digitalWrite(LED_PIN, LOW);
-  delay(100);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
-  digitalWrite(LED_PIN, LOW);
-  delay(100);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
-  digitalWrite(LED_PIN, LOW);
-  delay(100);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
-  digitalWrite(LED_PIN, LOW);
-  delay(100);
-  digitalWrite(LED_PIN, HIGH);
-  delay(100);
-  digitalWrite(LED_PIN, LOW);
   delay(100);
 }
 
@@ -172,9 +52,9 @@ void setup() {
     initializeService();
   } else {
     Serial.println("Could not started up devise.");
-    errorBlink();
-    errorBlink();
-    errorBlink();
+    errorBlink(LED_PIN);
+    errorBlink(LED_PIN);
+    errorBlink(LED_PIN);
   }
 }
 
