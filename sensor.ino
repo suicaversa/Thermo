@@ -1,10 +1,10 @@
 #include <ArduinoJson.h>
-#include <PubSubClient.h>
 #include <DHT.h>
 #include <IoAbstraction.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClientSecure.h>
 #include <ESP8266WebServer.h>
+#include <CloudIoTCore.h>
+#include "esp8266_mqtt.h"
 #include "FS.h"
 #define WIFI_RESET_PIN 14
 #define LED_PIN 4
@@ -12,208 +12,30 @@
 #define DHTTYPE DHT11
 #define MAX_WIFI_RETRY_SECONDS 10
 #define MODULE_NAME "Thermae"
-#define ROOT_CA_CERT_PATH "/rootca.pem"
-#define CERTIFICATE_PATH "/cert.pem.cert"
-#define PRIVATE_KEY_PATH "/cert.pem.key"
-// #define MQTT_SERVER "mqtt.googleapis.com"
-#define MQTT_SERVER "192.168.11.12"
-// #define MQTT_PORT 8883
-#define MQTT_PORT 1883
-// #define MQTT_TOPIC "Thermae"
-#define MQTT_TOPIC "tp1/test"
 
 ESP8266WebServer server(80);
 DHT dht( DHTPIN, DHTTYPE );
-// WiFiClientSecure wifiClient;
-WiFiClient wifiClient;
-PubSubClient pubsubClient(wifiClient);
-
-void handleRootGet() {
-  const int capacity = JSON_OBJECT_SIZE(4);
-  DynamicJsonDocument doc(capacity);
-  doc["message"] = String("Hello from ") + String(MODULE_NAME);
-  doc["sensor"] = readDht();
-  Serial.println("Accessed / ;");
-
-  char output[128];
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-void handleSettingPost() {
-  const int capacity = JSON_OBJECT_SIZE(3) + 4096 * 3;
-  DynamicJsonDocument doc(capacity);
-  DeserializationError error = deserializeJson(doc, server.arg("plain"));
-  if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.c_str());
-    server.send(400);
-    return;
-  }
-
-  String cert = doc["cert"];
-  if (cert.length() > 0) {
-    Serial.println(cert);
-    File certf = SPIFFS.open(CERTIFICATE_PATH, "w");
-    if (certf) {
-      certf.print(cert);
-      certf.close();
-    }
-  }
-
-  String privateKey = doc["privateKey"];
-  if (privateKey.length() > 0) {
-    Serial.println(privateKey);
-    File privatef = SPIFFS.open(PRIVATE_KEY_PATH, "w");
-    if (privatef) {
-      privatef.print(privateKey);
-      privatef.close();
-    }
-  }
-
-  String rootCA = doc["rootCA"];
-  if (rootCA.length() > 0) {
-    Serial.println(rootCA);
-    File rootcaf = SPIFFS.open(ROOT_CA_CERT_PATH, "w");
-    if (rootcaf) {
-      Serial.print("Writing to ");
-      Serial.print(ROOT_CA_CERT_PATH);
-      rootcaf.print(rootCA);
-      rootcaf.close();
-      Serial.println(" Done.");
-    }
-  }  
-
-  handleSettingGet();
-  doc.clear();
-}
-
-void handleSettingGet() {
-  const int capacity = JSON_OBJECT_SIZE(3) + 4096 * 3;
-  DynamicJsonDocument doc(capacity);
-  File f = SPIFFS.open(CERTIFICATE_PATH, "r");
-  if (f) {
-    String cert = f.readString();
-    doc["cert"] = cert;
-    Serial.print("read from fs: ");
-    Serial.println(cert);
-    f.close();
-  }
-
-  File privateF = SPIFFS.open(PRIVATE_KEY_PATH, "r");
-  if (privateF) {
-    String privateKey = privateF.readString();
-    doc["privateKey"] = privateKey;
-    Serial.print("read from fs: ");
-    Serial.println(privateKey);
-    privateF.close();
-  }
-
-  File rootCAF = SPIFFS.open(ROOT_CA_CERT_PATH, "r");
-  if (rootCAF) {
-    String rootCA = rootCAF.readString();
-    doc["rootCa"] = rootCA;
-    Serial.print("read from fs: ");
-    Serial.println(rootCA);
-    rootCAF.close();
-  }  
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-  doc.clear();
-  output.clear();
-}
-
-void prepareRouter() {
-  server.on("/", HTTP_GET ,handleRootGet);
-  server.on("/settings", HTTP_POST, handleSettingPost);
-  server.on("/cert", HTTP_GET, handleSettingGet);
-}
-
-String openFileString(String path) {
-  File f = SPIFFS.open(path, "r");
-  String fileString;
-  if (f) {
-    fileString = f.readString();
-  }
-  f.close();
-  return fileString;
-}
-
-String getCACert() {
-  return openFileString(ROOT_CA_CERT_PATH);
-}
-
-String getCertificate() {
-  return openFileString(CERTIFICATE_PATH);
-}
-
-String getPrivateKey() {
-  return openFileString(PRIVATE_KEY_PATH);
-}
-
-
-void prepareMQTT() {
-  // File caCertFile = SPIFFS.open(ROOT_CA_CERT_PATH, "r");
-  // File certificateFile = SPIFFS.open(CERTIFICATE_PATH, "r");
-  // File privateKeyFile = SPIFFS.open(PRIVATE_KEY_PATH, "r");
-  // wifiClient.loadCACert(caCertFile, caCertFile.size());
-  // wifiClient.loadCertificate(certificateFile, certificateFile.size());
-  // wifiClient.loadPrivateKey(privateKeyFile, privateKeyFile.size());
-  pubsubClient.setServer(MQTT_SERVER, MQTT_PORT);
-  pubsubClient.setCallback(mqttCallback);
-  // caCertFile.close();
-  // certificateFile.close();
-  // privateKeyFile.close();
-}
-
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    Serial.print("Received. topic=");
-    Serial.println(topic);
-    for (int i = 0; i < length; i++) {
-        Serial.print((char)payload[i]);
-    }
-    Serial.print("\n");
-}
-
-void connectMQTT(String message) {
-  while (!pubsubClient.connected()) {
-    if (pubsubClient.connect(MODULE_NAME)) {
-        Serial.println("Connected.");
-    } else {
-        Serial.print("Failed. Error state=");
-        Serial.println(pubsubClient.state());
-        // Wait 5 seconds before retrying
-        delay(5000);
-    }
-  }  
-
-  if (pubsubClient.connected()) {
-    pubsubClient.publish(MQTT_TOPIC, message.c_str());
-  }
-}
 
 void initializeService() {
-  Serial.println("Preparing httpd...");
-  prepareRouter();
-  server.begin();
-  Serial.println("Server begins.");
+  Serial.print("Preparing Cloud IoT... ");
+  setupCloudIoT();
+  Serial.println("done.");
 
-  Serial.println("Preparing mqtt...");
-  prepareMQTT();
-  Serial.println("mqtt done...");
-
-  taskManager.scheduleFixedRate(1, []{
-    server.handleClient();
-  });
   taskManager.scheduleFixedRate(10000, []{
+    mqtt->loop();
+    delay(10); // <- fixes some issues with WiFi stability
+
+    if (!mqttClient->connected()) {
+      Serial.print("connecting Cloud IoT...");
+      ESP.wdtDisable();
+      connect();
+      ESP.wdtEnable(0);
+      Serial.println("Done.");
+    }
+
     String result = readDht();
     Serial.println(result);
-    // pubsubClient.publish(MQTT_TOPIC, result.c_str());
-    connectMQTT(result.c_str());
-  });
-  taskManager.scheduleFixedRate(1, []{
-    pubsubClient.loop();
+    publishTelemetry(result);
   });
 }
 
