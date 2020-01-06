@@ -10,12 +10,20 @@
 #define MAX_WIFI_RETRY_SECONDS 10
 #define MODULE_NAME "Thermae"
 
-ESP8266WebServer server(80);
-
 void initializeService() {
   Serial.print("Preparing Cloud IoT... ");
   setupCloudIoT();
   Serial.println("done.");
+
+  initializeServer();
+
+  taskManager.scheduleFixedRate(1, []{
+    serverLoop();
+  });
+
+  taskManager.scheduleFixedRate(1000, []{
+    Serial.println(ESP.getFreeHeap());
+  });
 
   taskManager.scheduleFixedRate(10000, []{
     mqtt->loop();
@@ -41,8 +49,7 @@ void initializeDevise() {
   Serial.begin(115200);
   Serial.println("Starting Module...");
   initializeDHT();
-  Serial.println("Starting SPIFS....");
-  SPIFFS.begin();
+
   delay(100);
 }
 
