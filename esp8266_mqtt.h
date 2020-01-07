@@ -15,6 +15,12 @@
 // This file contains static methods for API requests using Wifi / MQTT
 #ifndef __ESP8266_MQTT_H__
 #define __ESP8266_MQTT_H__
+
+#define SETTING_FILE_PATH "/setting.json"
+#define PRIMARY_CA_FILE_PATH "/primary_ca.pem"
+#define BACKUP_CA_FILE_PATH "/backup_ca.pem"
+#define PRIVATE_KEY_FILE_PATH "/private.key"
+
 #include <ESP8266WiFi.h>
 #include "FS.h"
 
@@ -25,6 +31,7 @@
 #include <time.h>
 
 #include <MQTT.h>
+#include <ArduinoJson.h>
 
 #include <CloudIoTCore.h>
 #include <CloudIoTCoreMqtt.h>
@@ -67,46 +74,65 @@ String getJwt()
   return jwt;
 }
 
+String readStringFromFile(char path[]) {
+  if (!SPIFFS.begin())
+  {
+    Serial.println("Failed to mount file system");
+    return String(' ');
+  }
+
+  File file = SPIFFS.open(path, "r");
+  String result;
+  if (file) {
+    result = file.readString();
+    Serial.print("Readfile: " + String(path) + ":");
+    Serial.println(result);
+    file.close();
+  }
+
+  return result;
+}
+
+void loadSettings() {
+  String settingJsonString = readStringFromFile(SETTING_FILE_PATH);
+  if (settingJsonString.length() > 0) {
+    const size_t CAPACITY = JSON_OBJECT_SIZE(6) + 1024;
+    StaticJsonDocument<CAPACITY> settings;
+    DeserializationError error = deserializeJson(settings, settingJsonString);
+    if (error) {
+      Serial.print(F("setting file deserializeJson() failed: "));
+      Serial.println(error.c_str());
+    }
+
+    project_id = strdup(settings["project_id"]);
+    location = strdup(settings["location"]);
+    registry_id = strdup(settings["registry_id"]);
+    device_id = strdup(settings["device_id"]);
+    ntp_primary = strdup(settings["ntp_primary"]);
+    ntp_secondary = strdup(settings["ntp_secondary"]);
+  }
+}
+
+void loadPrivateKey() {
+  String privateKey = readStringFromFile(PRIVATE_KEY_FILE_PATH);
+  private_key_str = strdup(privateKey.c_str());
+}
+
 void setupCert()
 {
-  // Set CA cert on wifi client
-  // If using a static (pem) cert, uncomment in ciotc_config.h:
-  certList.append(primary_ca);
-  certList.append(backup_ca);
-  netClient->setTrustAnchors(&certList);
-  return;
-
-  // // If using the (preferred) method with the cert in /data (SPIFFS)
-
-  // if (!SPIFFS.begin())
-  // {
-  //   Serial.println("Failed to mount file system");
-  //   return;
-  // }
-
-  // File ca = SPIFFS.open("/primary_ca.pem", "r");
-  // if (!ca)
-  // {
-  //   Serial.println("Failed to open ca file");
-  // }
-  // else
-  // {
-  //   Serial.println("Success to open ca file");
-  //   certList.append(strdup(ca.readString().c_str()));
-  // }
-
-  // ca = SPIFFS.open("/backup_ca.pem", "r");
-  // if (!ca)
-  // {
-  //   Serial.println("Failed to open ca file");
-  // }
-  // else
-  // {
-  //   Serial.println("Success to open ca file");
-  //   certList.append(strdup(ca.readString().c_str()));
-  // }
-
+  // primary_ca = strdup(readStringFromFile(PRIMARY_CA_FILE_PATH).c_str());
+  // backup_ca = strdup(readStringFromFile(BACKUP_CA_FILE_PATH).c_str());
+  // // // Set CA cert on wifi client
+  // // // If using a static (pem) cert, uncomment in ciotc_config.h:
+  // certList.append(primary_ca);
+  // certList.append(backup_ca);
   // netClient->setTrustAnchors(&certList);
+  // return;
+  Serial.print("Setting up certs...");
+  certList.append(strdup(readStringFromFile(PRIMARY_CA_FILE_PATH).c_str()));
+  certList.append(strdup(readStringFromFile(BACKUP_CA_FILE_PATH).c_str()));
+  netClient->setTrustAnchors(&certList);
+  Serial.println("Done.");
 }
 
 ///////////////////////////////
@@ -149,18 +175,19 @@ void adjustClock() {
 // TODO: fix globals
 void setupCloudIoT()
 {
+  // ESP8266 WiFi setup
+  netClient = new WiFiClientSecure();
+    
+  loadSettings();
+  loadPrivateKey();
+  setupCert();
+
   // Create the device
   device = new CloudIoTCoreDevice(
       project_id, location, registry_id, device_id,
       private_key_str);
 
-  // ESP8266 WiFi setup
-  netClient = new WiFiClientSecure();
   adjustClock();
-
-  // ESP8266 WiFi secure initialization
-  setupCert();
-
   mqttClient = new MQTTClient(512);
   mqttClient->setOptions(180, true, 1000); // keepAlive, cleanSession, timeout
   mqtt = new CloudIoTCoreMqtt(mqttClient, netClient, device);

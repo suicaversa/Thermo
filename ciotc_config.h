@@ -19,15 +19,15 @@
 // const char* location = "us-central1";
 // const char* registry_id = "my-registry";
 // const char* device_id = "my-device";
-const char* project_id = "suica-versa";
-const char* location = "us-central1";
-const char* registry_id = "thermae";
-const char* device_id = "thermae";
+char* project_id = "suica-versa";
+char* location = "us-central1";
+char* registry_id = "thermae";
+char* device_id = "thermae";
 
 
 // Configuration for NTP
-const char* ntp_primary = "pool.ntp.org";
-const char* ntp_secondary = "time.nist.gov";
+char* ntp_primary = "pool.ntp.org";
+char* ntp_secondary = "time.nist.gov";
 
 // To get the private key run (where private-key.pem is the ec private key
 // used to create the certificate uploaded to google cloud iot):
@@ -41,7 +41,7 @@ const char* ntp_secondary = "time.nist.gov";
 //     "5a:2e:06:b5:c1:f2:9c:b3:77:b2:89:f5:29:29:93:"
 //     "07:fd:ed:22:0d:03:2b:a6:b1:b6:04:0b:d5:9b:49:"
 //     "7d:ca";
-const char* private_key_str =
+char* private_key_str =
     "70:de:e1:6a:71:1c:70:63:07:76:30:6d:15:d1:e7:"
     "8d:84:98:a0:3e:6a:4b:71:9f:b4:f0:9f:bd:85:fa:"
     "40:cd";

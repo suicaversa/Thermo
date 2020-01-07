@@ -54,24 +54,30 @@ void handleSettingPost() {
     return;
   }
 
-  JsonObject setting = assets["settings"];
-  if (setting.size() > 0) {
-    updateSetting(setting);
+// // extract the data
+// JsonVariant variant = doc.as<JsonVariant>();
+// int value = variant.as<int>();
+  JsonVariant setting = assets.getMember("settings");
+  if (!setting.isNull()) {
+    updateSetting(setting.as<JsonObject>());
   }
 
-  String primary_ca = assets["primary_ca"];
-  if (primary_ca.length() > 0) {
-    writeFile(PRIMARY_CA_FILE_PATH, primary_ca);
+  JsonVariant primary_ca = assets.getMember("primary_ca");
+  if (!primary_ca.isNull()) {
+    Serial.println(primary_ca.as<String>());
+    writeFile(PRIMARY_CA_FILE_PATH, primary_ca.as<String>());
   }
 
-  String backup_ca = assets["backup_ca"];
-  if (backup_ca.length() > 0) {
-    writeFile(BACKUP_CA_FILE_PATH, backup_ca);
+  JsonVariant backup_ca = assets.getMember("backup_ca");
+  if (!backup_ca.isNull()) {
+    Serial.println(backup_ca.as<String>());
+    writeFile(BACKUP_CA_FILE_PATH, backup_ca.as<String>());
   }
 
-  String private_key = assets["private_key"];
-  if (private_key.length() > 0) {
-    writeFile(PRIVATE_KEY_FILE_PATH, private_key);
+  JsonVariant private_key = assets.getMember("private_key");
+  if (!private_key.isNull()) {
+    Serial.println(private_key.as<String>());
+    writeFile(PRIVATE_KEY_FILE_PATH, private_key.as<String>());
   }
 
   server.send(200);
@@ -115,18 +121,18 @@ void updateSetting(JsonObject setting) {
   file.close();
 }
 
-String readStringFromFile(char path[]) {
-  File file = SPIFFS.open(path, "r");
-  String result;
-  if (file) {
-    result = file.readString();
-    Serial.print("Readfile: " + String(path) + ":");
-    Serial.println(result);
-    file.close();
-  }
+// String readStringFromFile(char path[]) {
+//   File file = SPIFFS.open(path, "r");
+//   String result;
+//   if (file) {
+//     result = file.readString();
+//     Serial.print("Readfile: " + String(path) + ":");
+//     Serial.println(result);
+//     file.close();
+//   }
 
-  return result;
-}
+//   return result;
+// }
 
 void handleSettingGet() {
   const int capacity = JSON_OBJECT_SIZE(3) + 1024;
